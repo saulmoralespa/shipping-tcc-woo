@@ -1,5 +1,7 @@
 <?php
 
+$order_statuses = wc_get_order_statuses();
+
 return apply_filters(
     'shipping_tcc_woo_stw_settings',
     [
@@ -20,7 +22,7 @@ return apply_filters(
             'title'       => __( 'Depurador' ),
             'label'       => __( 'Habilitar el modo de desarrollador' ),
             'type'        => 'checkbox',
-            'default'     => 'no',
+            'default'     => 'yes',
             'description' => __( 'Habilitar el modo de depuración para mostrar información de depuración.' ),
             'desc_tip' => true
         ),
@@ -81,7 +83,7 @@ return apply_filters(
             'description' => __('Número de identificación del remitente'),
             'desc_tip' => true
         ),
-        'params_tcc_title' => array(
+        'params_title' => array(
             'title'       => __('Clave y números de cuentas TCC'),
             'type'        => 'title',
             'description' => __('Número de identificación del remitente'),
@@ -104,5 +106,27 @@ return apply_filters(
             'description' => __('Número de cuenta mensajería'),
             'desc_tip' => true
         ),
+        'grabar_despacho_title' => array(
+            'title'       => __('Grabación de despacho'),
+            'type'        => 'title',
+            'description' => __('Configuración para la solicitud de regogidas'),
+        ),
+        'guide_free_shipping' => array(
+            'title'       => __( 'Grabar despachos cuando el envío es gratuito' ),
+            'label'       => __( 'Habilitar la grabación de despachos para envíos gratuitos' ),
+            'type'        => 'checkbox',
+            'default'     => 'no',
+            'description' => __( 'Permite la generación de guías cuando el envío es gratuito' ),
+            'desc_tip' => true
+        ),
+        'grabar_despacho_status' => array(
+            'title' => __( 'Estado de grabación de despacho' ),
+            'type'        => 'select',
+            'class'       => 'wc-enhanced-select',
+            'description' => __( 'Por defecto la grabación del despacho se genera cuando el estado del pedido cambia a procesando' ),
+            'desc_tip' => false,
+            'default' => 'wc-processing',
+            'options' => $order_statuses
+        )
     ]
 );

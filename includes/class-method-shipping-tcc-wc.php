@@ -20,7 +20,11 @@ class WC_Shipping_Method_Shipping_Tcc_WC extends WC_Shipping_Method
 
     protected string $packing_account;
 
-    protected mixed $courier_account;
+    protected string $courier_account;
+
+    protected string $guide_free_shipping;
+
+    protected string $grabar_despacho_status;
 
     public function __construct($instance_id = 0)
     {
@@ -44,6 +48,8 @@ class WC_Shipping_Method_Shipping_Tcc_WC extends WC_Shipping_Method
         $this->sender_name = $this->get_option('sender_name');
         $this->city_sender = $this->get_option('city_sender');
         $this->phone_sender = $this->get_option('phone_sender');
+        $this->guide_free_shipping = $this->get_option('guide_free_shipping');
+        $this->grabar_despacho_status = $this->get_option('grabar_despacho_status');
 
         $this->supports = array(
             'settings',
@@ -59,8 +65,8 @@ class WC_Shipping_Method_Shipping_Tcc_WC extends WC_Shipping_Method
     {
         return $this->enabled === 'yes' &&
             !empty($this->pass) &&
-            !empty($this->packing_account) &&
-            !empty($this->courier_account);
+            (!empty($this->packing_account) ||
+            !empty($this->courier_account));
     }
 
     public function init_form_fields()
@@ -71,8 +77,8 @@ class WC_Shipping_Method_Shipping_Tcc_WC extends WC_Shipping_Method
     public function admin_options()
     {
         ?>
-        <h3><?php echo $this->title; ?></h3>
-        <p><?php echo $this->method_description; ?></p>
+        <h3><?php echo esc_html($this->title); ?></h3>
+        <p><?php echo wp_kses_post(wpautop($this->method_description)); ?></p>
         <table class="form-table">
             <?php $this->generate_settings_html(); ?>
         </table>
@@ -117,5 +123,88 @@ class WC_Shipping_Method_Shipping_Tcc_WC extends WC_Shipping_Method
 
             $this->add_rate( $rate );
         }
+
+        /*$tcc = new WebService('CLIENTETCC608W3A61CJ', '1485100');
+        $params = array(
+            'despacho' => array(
+                'numerorelacion' => '',
+                'fechahorarelacion' => '',
+                'solicitudrecogida' => array(
+                    'numero' => '',
+                    'fecha' => '2023-09-18',
+                    'ventanainicio' => '2023-09-18T14:00:00',
+                    'ventanafin' => '2023-09-18T16:00:00'
+                ),
+                'unidadnegocio' => '1',
+                'numeroremesa' => '',
+                'fechadespacho' => '2023-09-18',
+                'tipoidentificacionremitente' => 'CC',
+                'identificacionremitente' => '901094896',
+                'sederemitente' => '',
+                'primernombreremitente' => '',
+                'segundonombreremitente' => '',
+                'primerapellidoremitente' => '',
+                'segundoapellidoremitente' => '',
+                'razonsocialremitente' => 'PRUEBAS PRODALIA TCC',
+                'naturalezaremitente' => 'J',
+                'direccionremitente' => 'CALLE 67 # 45-25',
+                'contactoremitente' => '',
+                'emailremitente' => '',
+                'telefonoremitente' => '3506336074',
+                'ciudadorigen' => '11001000',
+                'tipoidentificaciondestinatario' => 'CC',
+                'identificaciondestinatario' => '37878908',
+                'sededestinatario' => '',
+                'primernombredestinatario' => '',
+                'segundonombredestinatario' => '',
+                'primerapellidodestinatario' => '',
+                'segundoapellidodestinatario' => '',
+                'razonsocialdestinatario' => 'ANA RODRIGUEZ',
+                'naturalezadestinatario' => 'N',
+                'direcciondestinatario' => 'Carrera 43 # 31- 106',
+                'contactodestinatario' => '',
+                'emaildestinatario' => '',
+                'telefonodestinatario' => '3003445557',
+                'ciudaddestinatario' => '11001000',
+                'barriodestinatario' => '',
+                'totalpeso' => '',
+                'totalpesovolumen' => '',
+                'totalvalormercancia' => '',
+                'formapago' => '',
+                'observaciones' => '',
+                'llevabodega' => '',
+                'recogebodega' => '',
+                'centrocostos' => '',
+                'totalvalorproducto' => '',
+                'tiposervicio' => '',
+                'unidad' => array(
+                    array(
+                        'tipounidad' => 'TIPO_UND_PAQ',
+                        'tipoempaque' => '',
+                        'claseempaque' => 'CLEM_CAJA',
+                        'dicecontener' => '',
+                        'kilosreales' => '15',
+                        'largo' => '50',
+                        'alto' => '50',
+                        'ancho' => '50',
+                        'pesovolumen' => '',
+                        'valormercancia' => '100000',
+                        'codigobarras' => '',
+                        'numerobolsa' => '',
+                        'referencias' => '',
+                        'unidadesinternas' => ''
+                    )
+                ),
+                'documentoreferencia' => array(
+                    'tipodocumento' => '',
+                    'numerodocumento' => 'FA',
+                    'fechadocumento' => '2021-10-26'
+                ),
+                'numeroreferenciacliente' => '81699881400'
+            )
+        );
+
+        $res = $tcc->sandbox_mode(true)->grabardespacho7($params);
+        var_dump($res);*/
     }
 }

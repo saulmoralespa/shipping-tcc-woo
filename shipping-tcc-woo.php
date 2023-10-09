@@ -7,7 +7,7 @@
  * Author URI: https://saulmoralespa.com
  * License: GNU General Public License v3.0
  * License URI: http://www.gnu.org/licenses/gpl-3.0.html
- * WC tested up to: 6.3.1
+ * WC tested up to: 8.1.1
  * WC requires at least: 4.0
  *
  */
@@ -32,7 +32,7 @@ function shipping_tcc_woo_stw_init(){
 function shipping_tcc_woo_stw_notices( $notice ) {
     ?>
     <div class="error notice">
-        <p><?php echo $notice; ?></p>
+        <p><?php echo wp_kses_post(wpautop( $notice )); ?></p>
     </div>
     <?php
 }
@@ -73,7 +73,7 @@ function shipping_tcc_woo_stw_requirements(){
             add_action(
                 'admin_notices',
                 function() {
-                    $country = 'El plugin Shipping TCC Woocommerce requiere que el país donde se encuentra ubicada la tienda sea Colombia '  .
+                    $country = 'El plugin Shipping TCC Woocommerce requiere que la tienda esté ubicada en Colombia. '  .
                         sprintf(
                             '%s',
                             '<a href="' . admin_url() .
@@ -129,3 +129,5 @@ function shipping_tcc_woo_stw(){
     }
     return $plugin;
 }
+add_action( 'woocommerce_product_after_variable_attributes', array('Shipping_Tcc_WC_Plugin', 'variation_settings_fields'), 10, 3 );
+add_action( 'woocommerce_product_options_shipping', array('Shipping_Tcc_WC_Plugin', 'add_custom_shipping_option_to_products'), 10);

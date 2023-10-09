@@ -7,47 +7,47 @@ class Shipping_Tcc_WC_Plugin
      *
      * @var string
      */
-    public $file;
+    public string $file;
     /**
      * Plugin version.
      *
      * @var string
      */
-    public $version;
+    public string $version;
     /**
      * Absolute plugin path.
      *
      * @var string
      */
-    public $plugin_path;
+    public string $plugin_path;
     /**
      * Absolute plugin URL.
      *
      * @var string
      */
-    public $plugin_url;
+    public string $plugin_url;
     /**
      * assets plugin.
      *
      * @var string
      */
-    public $assets;
+    public string $assets;
     /**
      * Absolute path to plugin includes dir.
      *
      * @var string
      */
-    public $includes_path;
+    public string $includes_path;
     /**
      * Absolute path to plugin lib dir
      *
      * @var string
      */
-    public $lib_path;
+    public string $lib_path;
     /**
      * @var bool
      */
-    private $_bootstrapped = false;
+    private bool $_bootstrapped = false;
 
     public function __construct($file, $version)
     {
@@ -81,10 +81,22 @@ class Shipping_Tcc_WC_Plugin
     protected function _run(): void
     {
         if (!class_exists('\Saulmoralespa\Tcc\WebService'))
-            require_once ($this->lib_path . 'vendor/autoload.php');
+            require_once ($this->lib_path . 'WebService.php');
+        require_once ($this->lib_path . 'plugin-update-checker/plugin-update-checker.php');
         require_once ($this->includes_path . 'class-method-shipping-tcc-wc.php');
         require_once ($this->includes_path . 'class-shipping-tcc-wc.php');
 
+        $myUpdateChecker = YahnisElsts\PluginUpdateChecker\v5\PucFactory::buildUpdateChecker(
+            'https://github.com/saulmoralespa/shipping-tcc-woo',
+            $this->file, //Full path to the main plugin file or functions.php.
+            'shipping-tcc-woo'
+        );
+
+        $myUpdateChecker->setBranch('main');
+        $myUpdateChecker->getVcsApi()->enableReleaseAssets();
+
+        add_action( 'woocommerce_process_product_meta', array($this, 'save_custom_shipping_option_to_products'), 10 );
+        add_action( 'woocommerce_save_product_variation', array($this, 'save_variation_settings_fields'), 10, 2 );
         add_filter( 'plugin_action_links_' . plugin_basename($this->file), array($this, 'plugin_action_links'));
         add_filter( 'woocommerce_shipping_methods', array( $this, 'shipping_tcc_wc_add_method') );
     }
@@ -109,5 +121,51 @@ class Shipping_Tcc_WC_Plugin
             $message = print_r($message, true);
         $logger = new WC_Logger();
         $logger->add('shipping-tcc-wc', $message);
+    }
+
+    public static function add_custom_shipping_option_to_products()
+    {
+        global $post;
+
+        woocommerce_wp_text_input(
+            [
+                'id'          => '_shipping_custom_price_product_smp[' . $post->ID . ']',
+                'label'       => __( 'Valor declarado del producto'),
+                'placeholder' => 'Valor declarado del envío',
+                'desc_tip'    => true,
+                'description' => __( 'El valor que desea declarar para el envío'),
+                'value'       => get_post_meta( $post->ID, '_shipping_custom_price_product_smp', true )
+            ]
+        );
+    }
+
+    public static function variation_settings_fields($loop, $variation_data, $variation)
+    {
+
+        woocommerce_wp_text_input(
+            [
+                'id'          => '_shipping_custom_price_product_smp[' . $variation->ID . ']',
+                'label'       => __( 'Valor declarado del producto'),
+                'placeholder' => 'Valor declarado del envío',
+                'desc_tip'    => true,
+                'description' => __( 'El valor que desea declarar para el envío'),
+                'value'       => get_post_meta( $variation->ID, '_shipping_custom_price_product_smp', true )
+            ]
+        );
+    }
+
+    public function save_custom_shipping_option_to_products($post_id)
+    {
+        $custom_price_product = esc_attr($_POST['_shipping_custom_price_product_smp'][ $post_id ]);
+        if( isset( $custom_price_product ) )
+            update_post_meta( $post_id, '_shipping_custom_price_product_smp', esc_attr( $custom_price_product ) );
+    }
+
+    public function save_variation_settings_fields($post_id)
+    {
+        $custom_variation_price_product = esc_attr($_POST['_shipping_custom_price_product_smp'][ $post_id ]);
+        if( ! empty( $custom_variation_price_product ) ) {
+            update_post_meta( $post_id, '_shipping_custom_price_product_smp', $custom_variation_price_product );
+        }
     }
 }

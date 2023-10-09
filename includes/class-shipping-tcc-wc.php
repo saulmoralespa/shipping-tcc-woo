@@ -8,6 +8,7 @@ class Shipping_Tcc_WC extends WC_Shipping_Method_Shipping_Tcc_WC
     {
         parent::__construct($instance_id);
         $this->tcc = new WebService($this->pass);
+        $this->tcc->sandbox_mode($this->is_test);
     }
 
     /**
@@ -61,7 +62,11 @@ class Shipping_Tcc_WC extends WC_Shipping_Method_Shipping_Tcc_WC
             }
         }
 
-        if ($total_weight > 5){
+        if ($instance->packing_account &&
+            $instance->courier_account){
+            $account = ($total_weight > 5) ? $instance->packing_account : $instance->courier_account;
+            $idunidadestrategicanegocio = ($total_weight > 5) ? 1 : 2;
+        }elseif ($instance->packing_account){
             $account = $instance->packing_account;
             $idunidadestrategicanegocio = 1;
         }else{
@@ -87,8 +92,7 @@ class Shipping_Tcc_WC extends WC_Shipping_Method_Shipping_Tcc_WC
                     'unidades' => $units
                 ]
             ];
-            shipping_tcc_woo_stw()->log($params);
-            $res = $instance->tcc->sandbox_mode($instance->is_test)->consultarLiquidacion2($params);
+            $res = $instance->tcc->consultarLiquidacion2($params);
         }catch (\Exception $ex){
             shipping_tcc_woo_stw()->log($ex->getMessage());
         }
@@ -108,7 +112,7 @@ class Shipping_Tcc_WC extends WC_Shipping_Method_Shipping_Tcc_WC
      * @param string $country
      * @return false|int|string
      */
-    public static function get_code_city($state, $city, string $country = 'CO'): bool|int|string
+    public static function get_code_city($state, $city, string $country = 'CO')
     {
         $instance = new self();
         $name_state = $instance::name_destination($country, $state);
@@ -141,10 +145,10 @@ class Shipping_Tcc_WC extends WC_Shipping_Method_Shipping_Tcc_WC
         return self::clean_string($name_state_destination);
     }
 
-    public static function clean_cities($cities)
+    public static function clean_cities(array $cities): array
     {
-        foreach ($cities as $key => $value) {
-            $cities[$key] = self::clean_string($value);
+        foreach ($cities as &$city) {
+            $city = self::clean_string($city);
         }
 
         return $cities;
