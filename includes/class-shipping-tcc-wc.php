@@ -1,103 +1,250 @@
 <?php
 
 use Saulmoralespa\Tcc\WebService;
-class Shipping_Tcc_WC extends WC_Shipping_Method_Shipping_Tcc_WC
+
+class Shipping_Tcc_WC
 {
-    protected WebService $tcc;
-    public function __construct($instance_id = 0)
+    protected static ?WebService $tcc = null;
+
+    private static object|null $settings = null;
+
+    public static function get_instance(): ?WebService
     {
-        parent::__construct($instance_id);
-        $this->tcc = new WebService($this->pass);
-        $this->tcc->sandbox_mode($this->is_test);
+        if (isset(self::$settings) && isset(self::$tcc)) return self::$tcc;
+
+        self::$settings = (object)get_option('woocommerce_shipping_tcc_wc_settings');
+
+        if(self::$settings->pass && self::$settings->packing_account){
+            self::$tcc = new WebService(self::$settings->pass, self::$settings->packing_account);
+            $is_test = (bool)(integer)self::$settings->environment;
+            self::$tcc->sandbox_mode($is_test);
+        }
+
+        return self::$tcc;
     }
 
-    /**
-     * @throws Exception
-     */
-    public static function get_liquitation($package)
+
+    public static function get_liquitation($package = []): array|null
     {
-        $instance = new self();
+        if (!self::get_instance()) return null;
+
         $state_destination = $package['destination']['state'];
         $city_destination  = $package['destination']['city'];
+        $items = $package['contents'];
         $city_destination  = self::get_city($city_destination);
         $total_valorization = 0;
-        $total_weight = 0;
-        $units = [];
 
-        if (isset($package['contents']) ){
-            foreach ( $package['contents'] as $item ) {
-                /**
-                 * @var  $product WC_Product
-                 */
-                $product = $item['data'];
-                $quantity = $item['quantity'];
+        if (!isset($package['contents']) ) return null;
 
-
-                if ($item['variation_id'] > 0 && in_array($item['variation_id'], $product->get_children()))
-                    $product = wc_get_product($item['variation_id']);
-
-                if (!is_numeric($product->get_weight()) || !is_numeric($product->get_length())
-                    || !is_numeric($product->get_width()) || !is_numeric($product->get_height()))
-                    break;
-
-                $custom_price_product = get_post_meta($product->get_id(), '_shipping_custom_price_product_smp', true);
-                $price = $custom_price_product ?: $product->get_price();
-                $total_valorization += $price * $quantity;
-
-                $weight = floatval( $product->get_weight() ) * floatval( $quantity );
-                $height = $product->get_height() * $quantity;
-                $weight_volume = ($product->get_length() * $product->get_width() * $height) / 5000;
-                $total_weight += $weight;
-
-                $units['unidad'][] = [
-                    'numerounidades' => '1',
-                    'pesoreal' => $weight,
-                    'pesovolumen' => $weight_volume,
-                    'alto' => $height,
-                    'largo' => $product->get_length(),
-                    'ancho' => $product->get_width(),
-                    'tipoempaque' => ''
-                ];
-
-            }
-        }
-
-        if ($instance->packing_account &&
-            $instance->courier_account){
-            $account = ($total_weight > 5) ? $instance->packing_account : $instance->courier_account;
-            $idunidadestrategicanegocio = ($total_weight > 5) ? 1 : 2;
-        }elseif ($instance->packing_account){
-            $account = $instance->packing_account;
-            $idunidadestrategicanegocio = 1;
-        }else{
-            $account = $instance->courier_account;
-            $idunidadestrategicanegocio = 2;
-        }
-
-        $destine = self::get_code_city($state_destination, $city_destination);
-
-        $res = [];
+        $res = null;
 
         try {
+
+            $data = self::data_products($items);
+            $destine = self::get_code_city($state_destination, $city_destination);
+
             $params = [
                 'Liquidacion' => [
-                    'tipoenvio' => '1',
-                    'idciudadorigen' => $instance->city_sender,
-                    'idciudaddestino' => $destine,
+                    'tipoenvio' => '1', //Siempre debe ir 1
+                    'idciudadorigen' => self::$settings->city_sender, //Ciudad origen con código Dane
+                    'idciudaddestino' => $destine, //Ciudad destino con código Dane
                     'valormercancia' => $total_valorization,
-                    'boomerang' => '0',
-                    'cuenta' => $account,
+                    'boomerang' => '0', //Debe ir siempre 0
+                    'cuenta' => $data['account'],
                     'fecharemesa' => wp_date('Y-m-d'),
-                    'idunidadestrategicanegocio' => $idunidadestrategicanegocio,
-                    'unidades' => $units
+                    'idunidadestrategicanegocio' => $data['idunidadestrategicanegocio'],
+                    'unidades' => $data['units']
                 ]
             ];
-            $res = $instance->tcc->consultarLiquidacion2($params);
+            $res = self::get_instance()->consultarLiquidacion2($params);
         }catch (\Exception $ex){
             shipping_tcc_woo_stw()->log($ex->getMessage());
         }
 
         return $res;
+    }
+
+    public static function generate_guide($order_id, $previous_status, $next_status): void
+    {
+        $sub_orders = get_children( array( 'post_parent' => $order_id, 'post_type' => 'shop_order' ),  ARRAY_A);
+        $orders =  $sub_orders ?: [['ID' => $order_id]];
+
+        foreach ($orders as $sub) {
+            $order_id = $sub['ID'];
+            self::exec_guide($order_id, $next_status);
+        }
+    }
+
+    public static function exec_guide($order_id, string $new_status)
+    {
+        $order = wc_get_order($order_id);
+
+        if (!$order->has_shipping_method(SHIPPING_TCC_WOO_STW_ID)) return;
+
+        $next_status = wc_get_order_status_name($new_status);
+        $numero_remesa = get_post_meta($order_id, '_shipping_tcc_numero_remesa', true);
+
+        if(!self::get_instance() ||
+            self::$settings->enabled === 'no' ||
+            $next_status !== wc_get_order_status_name(self::$settings->grabar_despacho_status) ||
+            !empty($numero_remesa) ||
+            empty(self::$settings->license_key) ||
+            (self::$settings->guide_free_shipping === 'yes' && $order->get_shipping_total() > 0)
+        ) return;
+
+        $order_id_origin = $order->get_parent_id() ? $order->get_parent_id() : $order->get_id();
+        $order = new WC_Order($order_id_origin);
+        $razonsocialdestinatario = $order->get_shipping_first_name() ? $order->get_shipping_first_name() .
+            " " . $order->get_shipping_last_name() : $order->get_billing_first_name() .
+            " " . $order->get_billing_last_name();
+        $direcciondestinatario = $order->get_shipping_address_1() ? $order->get_shipping_address_1() .
+            " " . $order->get_shipping_address_2() : $order->get_billing_address_1() .
+            " " . $order->get_billing_address_2();
+        $state_destination = $order->get_shipping_state() ? $order->get_shipping_state() : $order->get_billing_state();
+        $city_destination  = $order->get_shipping_city() ? $order->get_shipping_city() : $order->get_billing_city();
+        $city_destination  = self::get_city($city_destination);
+        $ciudaddestinatario = self::get_code_city($state_destination, $city_destination);
+        $items = $order->get_items();
+        $data = self::data_products($items, true);
+
+        try {
+            $params = [
+                'despacho' => array(
+                    'numerorelacion' => '',
+                    'fechahorarelacion' => '',
+                    'solicitudrecogida' => array(
+                        'numero' => '',
+                        'fecha' => wp_date('Y-m-d'),
+                        'ventanainicio' => wp_date('Y-m-d\TH:i:s'),
+                        'ventanafin' => wp_date('Y-m-d\TH:i:s')
+                    ),
+                    'unidadnegocio' => 1, // 1 paqueteria, 2 paqueteria
+                    'numeroremesa' => '',
+                    'fechadespacho' => wp_date('Y-m-d'),
+                    'tipoidentificacionremitente' => self::$settings->type_identification_sender ?? '',
+                    'identificacionremitente' => substr(self::$settings->identification_sender, 0, 10) ?? '',
+                    'sederemitente' => '',
+                    'primernombreremitente' => '',
+                    'segundonombreremitente' => '',
+                    'primerapellidoremitente' => '',
+                    'segundoapellidoremitente' => '',
+                    'razonsocialremitente' => substr(self::$settings->sender_name, 0, 60),
+                    'naturalezaremitente' => self::$settings->type_identification_sender === 'NIT' ? 'J' : 'N', // J Jurídicon N Natural
+                    'direccionremitente' => self::$settings->address_sender,
+                    'contactoremitente' => '',
+                    'emailremitente' => '',
+                    'telefonoremitente' => self::$settings->phone_sender ?? '',
+                    'ciudadorigen' => self::$settings->city_sender . '000',
+                    'tipoidentificaciondestinatario' => '',
+                    'identificaciondestinatario' => '',
+                    'sededestinatario' => '',
+                    'primernombredestinatario' => '',
+                    'segundonombredestinatario' => '',
+                    'primerapellidodestinatario' => '',
+                    'segundoapellidodestinatario' => '',
+                    'razonsocialdestinatario' => $razonsocialdestinatario,
+                    'naturalezadestinatario' => '',
+                    'direcciondestinatario' => $direcciondestinatario,
+                    'contactodestinatario' => '',
+                    'emaildestinatario' => $order->get_billing_email(),
+                    'telefonodestinatario' => $order->get_billing_phone(),
+                    'ciudaddestinatario' => $ciudaddestinatario . '000',
+                    'barriodestinatario' => '',
+                    'totalpeso' => '',
+                    'totalpesovolumen' => '',
+                    'totalvalormercancia' => '',
+                    'formapago' => '',
+                    'observaciones' => '',
+                    'llevabodega' => '',
+                    'recogebodega' => '',
+                    'centrocostos' => '',
+                    'totalvalorproducto' => '',
+                    'tiposervicio' => '',
+                    'unidad' => $data['units'],
+                    'documentoreferencia' => array(
+                        'tipodocumento' => '',
+                        'numerodocumento' => 'FA',
+                        'fechadocumento' => wp_date('Y-m-d')
+                    ),
+                    'numeroreferenciacliente' => $order_id_origin
+
+                )
+            ];
+            $res = self::$tcc->grabarDespacho7($params);
+
+            $numero_remesa = $res['remesa'] ?? '';
+
+            if(!$numero_remesa) return;
+
+            $note = sprintf( __( 'Número de remesa: %s' ), $numero_remesa );
+            $order->add_order_note($note);
+            update_post_meta($order_id, '_shipping_tcc_numero_remesa', $numero_remesa);
+        }catch (\Exception $ex){
+            shipping_tcc_woo_stw()->log($ex->getMessage());
+        }
+    }
+
+
+    public static function data_products(array $items, $guide = false) : array
+    {
+
+        $units = [];
+        $total_weight = 0;
+
+        foreach ($items as $item) {
+            $product_id = $guide ? $item['product_id'] : $item['data']->get_id();
+            $product = wc_get_product($product_id);
+            $quantity = $item['quantity'];
+
+            if ($item['variation_id'] > 0 && in_array($item['variation_id'], $product->get_children()))
+                $product = wc_get_product($item['variation_id']);
+
+            if (!$product->get_weight() || !$product->get_length()
+                || !$product->get_width() || !$product->get_height())
+                break;
+
+            $custom_price_product = get_post_meta($product->get_id(), '_shipping_custom_price_product_smp', true);
+            $price = $custom_price_product ?:   $product->get_price();
+            $total_valorization = $price * $quantity;
+            $weight = floatval( $product->get_weight() ) * floatval( $quantity );
+            $height = $product->get_height() * $quantity;
+            $weight_volume = ($product->get_length() * $product->get_width() * $height) / 5000;
+            $total_weight += $weight;
+
+            $units[] = [
+                'tipounidad' => 'TIPO_UND_PAQ',
+                'claseempaque' => '', // CLEM_CAJA, CLEM_SOBRE, CLEM_LIO
+                'kilosreales' => $weight,
+                'valormercancia' => $total_valorization,
+                'numerounidades' => 1,
+                'pesoreal' => $weight,
+                'pesovolumen' => $weight_volume,
+                'alto' => $height,
+                'largo' => $product->get_length(),
+                'ancho' => $product->get_width(),
+                'tipoempaque' => ''
+            ];
+        }
+
+        if (self::$settings->packing_account &&
+            self::$settings->courier_account){
+            $account = ($total_weight > 5) ? self::$settings->packing_account : self::$settings->courier_account;
+            $idunidadestrategicanegocio = ($total_weight > 5) ? 1 : 2;
+        }elseif (self::$settings->packing_account){
+            $account = self::$settings->packing_account;
+            $idunidadestrategicanegocio = 1;
+        }else{
+            $account = self::$settings->courier_account;
+            $idunidadestrategicanegocio = 2;
+        }
+
+        $data = [
+            'account' => $account,
+            'idunidadestrategicanegocio' => $idunidadestrategicanegocio,
+            'units' => $units
+        ];
+
+        return apply_filters('shipping_tcc_data_products', $data, $items, $guide);
     }
 
     public static function get_city(string $city_destination): string
@@ -114,13 +261,14 @@ class Shipping_Tcc_WC extends WC_Shipping_Method_Shipping_Tcc_WC
      */
     public static function get_code_city($state, $city, string $country = 'CO')
     {
-        $instance = new self();
-        $name_state = $instance::name_destination($country, $state);
+        $name_state = self::name_destination($country, $state);
 
         $address = "$city - $name_state";
 
-        if ($instance->debug === 'yes')
-            shipping_tcc_woo_stw()->log("origin: $instance->city_sender: $address");
+        if (self::$settings->debug === 'yes'){
+            $city = self::$settings->city_sender;
+            shipping_tcc_woo_stw()->log("origin: $city: $address");
+        }
 
         $cities = include dirname(__FILE__) . '/cities.php';
 

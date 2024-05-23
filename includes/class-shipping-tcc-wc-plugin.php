@@ -3,18 +3,6 @@
 class Shipping_Tcc_WC_Plugin
 {
     /**
-     * Filepath of main plugin file.
-     *
-     * @var string
-     */
-    public string $file;
-    /**
-     * Plugin version.
-     *
-     * @var string
-     */
-    public string $version;
-    /**
      * Absolute plugin path.
      *
      * @var string
@@ -49,11 +37,11 @@ class Shipping_Tcc_WC_Plugin
      */
     private bool $_bootstrapped = false;
 
-    public function __construct($file, $version)
+    public function __construct(
+        protected $file,
+        protected  $version
+    )
     {
-        $this->file = $file;
-        $this->version = $version;
-
         $this->plugin_path   = trailingslashit( plugin_dir_path( $this->file ) );
         $this->plugin_url    = trailingslashit( plugin_dir_url( $this->file ) );
         $this->assets = $this->plugin_url . trailingslashit('assets');
@@ -99,9 +87,10 @@ class Shipping_Tcc_WC_Plugin
         add_action( 'woocommerce_save_product_variation', array($this, 'save_variation_settings_fields'), 10, 2 );
         add_filter( 'plugin_action_links_' . plugin_basename($this->file), array($this, 'plugin_action_links'));
         add_filter( 'woocommerce_shipping_methods', array( $this, 'shipping_tcc_wc_add_method') );
+        add_action( 'woocommerce_order_status_changed', array('Shipping_Tcc_WC', 'generate_guide'), 10, 3 );
     }
 
-    public function plugin_action_links($links)
+    public function plugin_action_links($links): array
     {
         $plugin_links = array();
         $plugin_links[] = '<a href="' . admin_url( 'admin.php?page=wc-settings&tab=shipping&section=shipping_tcc_wc') . '">' . 'Configuraciones' . '</a>';
@@ -109,7 +98,7 @@ class Shipping_Tcc_WC_Plugin
         return array_merge( $plugin_links, $links );
     }
 
-    public function shipping_tcc_wc_add_method($methods)
+    public function shipping_tcc_wc_add_method($methods): array
     {
         $methods['shipping_tcc_wc'] = 'WC_Shipping_Method_Shipping_Tcc_WC';
         return $methods;
@@ -123,45 +112,61 @@ class Shipping_Tcc_WC_Plugin
         $logger->add('shipping-tcc-wc', $message);
     }
 
-    public static function add_custom_shipping_option_to_products()
+    public static function add_custom_shipping_option_to_products(): void
     {
         global $post;
+        global $shipping_custom_price_product_smp_loaded;
 
-        woocommerce_wp_text_input(
-            [
-                'id'          => '_shipping_custom_price_product_smp[' . $post->ID . ']',
-                'label'       => __( 'Valor declarado del producto'),
-                'placeholder' => 'Valor declarado del envío',
-                'desc_tip'    => true,
-                'description' => __( 'El valor que desea declarar para el envío'),
-                'value'       => get_post_meta( $post->ID, '_shipping_custom_price_product_smp', true )
-            ]
-        );
+        if (!isset($shipping_custom_price_product_smp_loaded)) {
+            $shipping_custom_price_product_smp_loaded = false;
+        }
+
+        if($shipping_custom_price_product_smp_loaded) return;
+
+        woocommerce_wp_text_input( [
+            'id'          => '_shipping_custom_price_product_smp[' . $post->ID . ']',
+            'label'       => __( 'Valor declarado del producto'),
+            'placeholder' => 'Valor declarado del envío',
+            'desc_tip'    => true,
+            'description' => __( 'El valor que desea declarar para el envío'),
+            'value'       => get_post_meta( $post->ID, '_shipping_custom_price_product_smp', true ),
+        ] );
+
+        $shipping_custom_price_product_smp_loaded = true;
     }
 
-    public static function variation_settings_fields($loop, $variation_data, $variation)
+    public static function variation_settings_fields($loop, $variation_data, $variation): void
     {
+        global ${"shipping_custom_price_product_smp_$variation->ID"};
+
+        if (!isset(${"shipping_custom_price_product_smp_$variation->ID"})) {
+            ${"shipping_custom_price_product_smp_$variation->ID"} = false;
+        }
+
+        if(${"shipping_custom_price_product_smp_$variation->ID"}) return;
 
         woocommerce_wp_text_input(
-            [
+            array(
                 'id'          => '_shipping_custom_price_product_smp[' . $variation->ID . ']',
                 'label'       => __( 'Valor declarado del producto'),
                 'placeholder' => 'Valor declarado del envío',
                 'desc_tip'    => true,
                 'description' => __( 'El valor que desea declarar para el envío'),
                 'value'       => get_post_meta( $variation->ID, '_shipping_custom_price_product_smp', true )
-            ]
+            )
         );
+
+        ${"shipping_custom_price_product_smp_$variation->ID"} = true;
     }
 
-    public function save_custom_shipping_option_to_products($post_id)
+    public function save_custom_shipping_option_to_products($post_id): void
     {
         $custom_price_product = esc_attr($_POST['_shipping_custom_price_product_smp'][ $post_id ]);
         if( isset( $custom_price_product ) )
             update_post_meta( $post_id, '_shipping_custom_price_product_smp', esc_attr( $custom_price_product ) );
     }
 
-    public function save_variation_settings_fields($post_id)
+    public function save_variation_settings_fields($post_id): void
     {
         $custom_variation_price_product = esc_attr($_POST['_shipping_custom_price_product_smp'][ $post_id ]);
         if( ! empty( $custom_variation_price_product ) ) {

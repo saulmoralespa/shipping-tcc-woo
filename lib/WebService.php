@@ -2,8 +2,8 @@
 
 namespace Saulmoralespa\Tcc;
 
-use Exception;
 use SoapClient;
+use Exception;
 
 class WebService
 {
@@ -14,22 +14,23 @@ class WebService
 
     const SANDBOX_URL_SHIPMENTS = 'http://preclientes.tcc.com.co/api/clientes/remesasws?wsdl';
 
-    const URL_SHIPMENTS = 'http://tccremesas.saulmoralespa.com/?wsdl';
+    const URL_SHIPMENTS = 'http://tccremesas.saulmoralespa.com/api/clientes/remesasws?wsdl';
+
     private static bool $sandbox = false;
-    private string $pass;
 
     public function __construct(
-        $pass
+        private $pass,
+        private $account
     )
     {
-        $this->pass = $pass;
+
     }
 
     /**
      * @param bool $mode
      * @return $this
      */
-    public function sandbox_mode(bool $mode = false): WebService
+    public function sandbox_mode(bool $mode = false): static
     {
         if ($mode){
             self::$sandbox = true;
@@ -70,9 +71,6 @@ class WebService
         return $url;
     }
 
-    /**
-     * @return string
-     */
     private function getUrlShipment(): string
     {
         if (self::$sandbox) return self::SANDBOX_URL_SHIPMENTS;
@@ -81,10 +79,10 @@ class WebService
 
     /**
      * @param array $params
-     * @return array|Exception
+     * @return Exception|array
      * @throws Exception
      */
-    public function consultarLiquidacion2(array $params)
+    public function consultarLiquidacion2(array $params): Exception|array
     {
         $params = array_merge($params, [
             'Clave' => $this->pass
@@ -95,13 +93,26 @@ class WebService
 
     /**
      * @param array $params
-     * @return array|Exception
+     * @return Exception|array|null
      * @throws Exception
      */
-    public function grabarDespacho7(array $params)
+    public function grabarDespacho7(array $params):Exception|array
     {
         $params['despacho']['clave'] = isset($params['despacho']) ? $this->pass : '';
-        //$params['despacho']['cuentaremitente'] = isset($params['despacho']) ? $this->account : '';
+        $params['despacho']['cuentaremitente'] = isset($params['despacho']) ? $this->account : '';
+        $operation = strtolower(__FUNCTION__);
+        return $this->callSoap($this->getUrlShipment(),$operation, $params);
+    }
+
+    /**
+     * @param array $params
+     * @return Exception|array
+     * @throws Exception
+     */
+    public function anularDespacho(array $params):Exception|array
+    {
+        $params['clave'] = $this->pass;
+        $params['cuentaremitente'] = $this->account;
         $operation = strtolower(__FUNCTION__);
         return $this->callSoap($this->getUrlShipment(),$operation, $params);
     }
@@ -111,7 +122,7 @@ class WebService
      * @return array|Exception
      * @throws Exception
      */
-    public function ConsultarInformacionRemesasEstadosUEN(array $params)
+    public function ConsultarInformacionRemesasEstadosUEN(array $params): Exception|array
     {
         $params = array_merge($params, [
             'Clave' => $this->pass
@@ -126,7 +137,7 @@ class WebService
     {
         return [
             "trace" => true,
-            'exceptions' => false,
+            'exceptions' => true,
             "soap_version"  => SOAP_1_1,
             "connection_timeout"=> 60,
             "encoding"=> "utf-8",
@@ -147,10 +158,10 @@ class WebService
      * @param $operation
      * @param $params
      * @param bool $liquidation
-     * @return Exception|array
+     * @return array|Exception
      * @throws Exception
      */
-    private function callSoap($endpoint, $operation, $params, bool $liquidation = false)
+    private function callSoap($endpoint, $operation, $params, bool $liquidation = false): Exception|array
     {
         try{
             $client = new SoapClient($endpoint, $this->optionsSoap());
@@ -159,17 +170,36 @@ class WebService
             $json = json_encode($res);
             $res = json_decode($json, true);
 
-            if ($liquidation) $res = $res[$nameFunctionResult];
-
-            if (isset($res['respuesta']['codigo']) &&
-                $res['respuesta']['codigo'] !== "0"){
-                $message = $res['respuesta']['codigo']['mensaje'] ?? "Código interno: {$res['respuesta']['codigo']}";
-                throw new Exception($message);
+            if ($liquidation){
+                $res = $res[$nameFunctionResult];
             }
 
+            self::checkErros($res);
+
             return $res;
+        }catch (\SoapFault $soapFault) {
+            throw new \Exception($soapFault->getMessage());
         }catch (Exception $ex){
             throw new  Exception($ex->getMessage());
+        }
+    }
+
+    /**
+     * @param $res
+     * @return void
+     * @throws Exception
+     */
+    private static function checkErros($res): void
+    {
+        if(isset($res['remesa']) && empty($res['remesa'])){
+            throw new Exception($res['mensaje']);
+        }
+
+        if (isset($res['respuesta']['codigo']) &&
+            $res['respuesta']['codigo'] !== "0"){
+            $message = $res['respuesta']['codigo']['mensaje'] ?? '';
+            $message = $res['respuesta']['mensajeinterno'] ?? $message;
+            throw new Exception($message);
         }
     }
 }

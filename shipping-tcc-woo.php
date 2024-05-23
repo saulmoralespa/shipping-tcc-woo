@@ -2,14 +2,14 @@
 /**
  * Plugin Name: Shipping TCC Woo
  * Description: Shipping TCC Woocommerce is available for Colombia
- * Version: 1.0.0
+ * Version: 2.0.0
  * Author: Saul Morales Pacheco
  * Author URI: https://saulmoralespa.com
  * License: GNU General Public License v3.0
  * License URI: http://www.gnu.org/licenses/gpl-3.0.html
- * WC tested up to: 8.1.1
+ * WC tested up to: 8.9.1
  * WC requires at least: 4.0
- *
+ * Requires Plugins: woocommerce,departamentos-y-ciudades-de-colombia-para-woocommerce
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -17,7 +17,11 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 if(!defined('SHIPPING_TCC_WOO_STW_VERSION')){
-    define('SHIPPING_TCC_WOO_STW_VERSION', '1.0.0');
+    define('SHIPPING_TCC_WOO_STW_VERSION', '2.0.0');
+}
+
+if(!defined('SHIPPING_TCC_WOO_STW_ID')){
+    define('SHIPPING_TCC_WOO_STW_ID', 'shipping_tcc_wc');
 }
 
 add_action( 'plugins_loaded', 'shipping_tcc_woo_stw_init');
@@ -39,6 +43,8 @@ function shipping_tcc_woo_stw_notices( $notice ) {
 
 function shipping_tcc_woo_stw_requirements(){
 
+    if ( ! function_exists( 'is_plugin_active' ) ) require_once( ABSPATH . '/wp-admin/includes/plugin.php' );
+
     if ( ! extension_loaded( 'soap' ) ) {
         if ( is_admin() && ! defined( 'DOING_AJAX' ) ) {
             add_action(
@@ -51,24 +57,10 @@ function shipping_tcc_woo_stw_requirements(){
         return false;
     }
 
-    if ( ! is_plugin_active(
-        'woocommerce/woocommerce.php'
-    ) ) {
-        if ( is_admin() && ! defined( 'DOING_AJAX' ) ) {
-            add_action(
-                'admin_notices',
-                function() {
-                    shipping_tcc_woo_stw_notices( 'El plugin Shipping TCC Woocommerce requiere que esté instalado y activo el plugin: Woocommerce' );
-                }
-            );
-        }
-        return false;
-    }
-
     $woo_countries  = new WC_Countries();
     $default_country = $woo_countries->get_base_country();
 
-    if ( ! in_array( $default_country, array( 'CO' ), true ) ) {
+    if ($default_country !== 'CO') {
         if ( is_admin() && ! defined( 'DOING_AJAX' ) ) {
             add_action(
                 'admin_notices',
@@ -86,38 +78,6 @@ function shipping_tcc_woo_stw_requirements(){
         return false;
     }
 
-    $plugin_path_departamentos_ciudades_colombia_woo = 'departamentos-y-ciudades-de-colombia-para-woocommerce/departamentos-y-ciudades-de-colombia-para-woocommerce.php';
-
-    if ( !is_plugin_active(
-        $plugin_path_departamentos_ciudades_colombia_woo
-    ) ) {
-        if ( is_admin() && ! defined( 'DOING_AJAX' ) ) {
-            add_action(
-                'admin_notices',
-                function() {
-                    $action = 'install-plugin';
-                    $slug = 'departamentos-y-ciudades-de-colombia-para-woocommerce';
-                    $plugin_install_url = wp_nonce_url(
-                        add_query_arg(
-                            array(
-                                'action' => $action,
-                                'plugin' => $slug
-                            ),
-                            admin_url( 'update.php' )
-                        ),
-                        $action.'_'.$slug
-                    );
-                    $plugin = 'El plugin Shipping TCC Woocommerce requiere que esté instalado y activo el plugin: '  .
-                        sprintf(
-                            '%s',
-                            "<a class='button button-primary' href='$plugin_install_url'>Departamentos y ciudades de Colombia para Woocommerce</a>" );
-
-                    shipping_tcc_woo_stw_notices( $plugin );
-                }
-            );
-        }
-        return false;
-    }
     return true;
 }
 
